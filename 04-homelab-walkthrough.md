@@ -137,12 +137,81 @@ nginx has two jobs:
 
 ## 7. Running it
 
-**Whole stack in Docker:**
+**Whole stack in Docker (macOS or Linux):**
 
 ```bash
 cp .env.example .env          # then edit the password
 docker compose up --build
 ```
+
+### Windows setup (first time)
+
+Docker Desktop on Windows runs its engine inside **WSL 2** (Windows' built-in Linux layer), so install that first.
+
+1. **Install WSL.** In PowerShell **as administrator**:
+   ```powershell
+   wsl --install --no-distribution
+   ```
+   Restart the PC. Then, in a normal PowerShell, `wsl --status` and `wsl --update` should run without errors.
+2. **Install Docker Desktop** (normal PowerShell; a permission prompt appears):
+   ```powershell
+   winget install Docker.DockerDesktop
+   ```
+   Start **Docker Desktop** from the Start menu and wait until the whale icon in the tray is steady.
+3. **Verify it:**
+   ```powershell
+   docker --version
+   docker compose version
+   docker run hello-world
+   ```
+   If `docker run` fails with `failed to connect to the docker API at npipe:////./pipe/docker_engine`, the engine isn't running: start Docker Desktop (and make sure WSL is installed).
+4. **Free the ports** the stack publishes: **80, 5432, 8080, 8081 and 8000**. Stop anything already using them, such as a local PostgreSQL, a web server, or a stand-in API on 8080 (like the `mock-api.mjs` from lesson 03).
+5. **Get the code and start the stack** (PowerShell; `Copy-Item` replaces `cp`). Keep this clone outside your React project folder:
+   ```powershell
+   cd C:\DEV
+   git clone https://github.com/wmorgan999/homelab.git
+   cd homelab
+   Copy-Item .env.example .env
+   notepad .env                  # change POSTGRES_PASSWORD
+   docker compose up --build -d
+   docker compose ps
+   ```
+   `-d` runs it in the background. The first build takes several minutes (it builds the Java, React and Python images). Postgres and Kafka must show `healthy` first; the two Java services need roughly another half minute after they show `Up` before they answer requests.
+
+> **Password gotcha:** Postgres stores the password the **first** time its data volume is created. If you change `POSTGRES_PASSWORD` in `.env` afterwards, the database keeps the old one and the API can't connect. `docker compose down -v` deletes the volume (and all data) so the next start uses the new password.
+
+Everyday commands:
+
+| Command | What it does |
+|---|---|
+| `docker compose ps` | Show the containers and their health |
+| `docker compose logs api --tail 40` | Last lines of one service's log (`api`, `consumer`, `reports`, `web`, ...) |
+| `docker compose up --build -d api` | Rebuild and restart just the API after a code change |
+| `docker compose down` | Stop and remove the containers; **keeps** your data |
+| `docker compose down -v` | Same, and also **deletes** the database volume |
+
+### Check that it works
+
+Follow one customer through the whole system (the §5 trace, for real):
+
+1. **API answers.** `curl.exe http://localhost:8080/api/customers` should return JSON with Ada Lovelace and Grace Hopper (the seed rows from `db/init/01-schema.sql`).
+2. **Use the app.** Open http://localhost and add a customer.
+3. **Duplicate email.** Add the same email again. The page shows `Save failed: 500`. The cause is in the API log (`docker compose logs api --tail 40`): a `DataIntegrityViolationException` for the unique constraint `customers_email_key`. The controller doesn't catch it, so Spring returns a generic 500. The failure happens at `repo.save()`, **before** the Kafka publish, so a rejected save never produces an event.
+4. **The event arrives.** The new customer appears at http://localhost:8000/reports/audit (the `consumer` wrote it from the `customer-events` topic). Kafka UI at http://localhost:8081 shows the same message under Topics, then `customer-events`.
+
+### Looking at the database in pgAdmin
+
+Postgres is published on port 5432, so pgAdmin on the same PC connects like a normal local server: right-click **Servers**, then **Register**, then **Server**, and enter host `localhost`, port `5432`, maintenance database `labdb`, username `labuser`, and the password from your `.env`. Under `labdb`, then `public`, then Tables, you'll find:
+
+- `customers`: the customers
+- `customer_audit`: one row per event, written by the consumer
+- `flyway_schema_history`: the migrations the API applied
+
+Treat it as read-only while learning: the audit rows come from events, so editing `customers` by hand makes the two tables disagree.
+
+If pgAdmin runs on a **different machine**, use the PC's network address instead of `localhost` and allow port 5432 through Windows Firewall (only on a network you trust, with a strong password). If pgAdmin runs **in a container**, use `host.docker.internal` as the host.
+
+### Service URLs
 
 | URL | What |
 |---|---|
@@ -170,7 +239,7 @@ These aren't criticisms of the lab; they're exactly the kind of improvements tha
 |---|---|---|
 | 1 | `load()` never checks `r.ok`. If the API returns an error, the JSON body is an **object**, not an array, and `customers.map` will throw and blank the page. | Always check `response.ok` before parsing as data. |
 | 2 | `add()` has no `try/catch`. A network failure becomes an unhandled promise rejection with no message in the UI. | Every `await fetch` can throw. |
-| 3 | Adding a duplicate email hits the table's `UNIQUE` constraint; the controller doesn't translate that, so the UI most likely shows a generic "Save failed: 500". | Good errors need cooperation from the backend (e.g. 409 Conflict) and the UI. |
+| 3 | Adding a duplicate email hits the table's `UNIQUE` constraint; the controller doesn't translate that, so the UI shows a generic "Save failed: 500" (confirmed on a running stack; see §7). | Good errors need cooperation from the backend (e.g. 409 Conflict) and the UI. |
 | 4 | No loading or empty state. | Users see a blank table and can't tell "loading" from "no data". |
 | 5 | `useEffect(() => { load() }, [])` calls a function re-created every render. ESLint's `react-hooks/exhaustive-deps` rule would warn. | Learn the idiom: move the fetch inside the effect, or use `useCallback`. |
 | 6 | Everything is in one component with inline styles. | Fine for a lab; lesson 03 §4 shows the split. |
