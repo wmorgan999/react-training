@@ -62,6 +62,99 @@ There is **no** update or delete endpoint yet. Anything you want the UI to do be
 
 Why this matters: the frontend is only as capable as the API contract. When you design a screen, write down the request and response shapes first.
 
+### 2.1 What the controller annotations actually do
+
+An **annotation** (`@Something`) is a label attached to a class or method. It does nothing by itself. The framework reads the labels when the app starts and wires things up from them.
+
+```java
+@RestController                       // "this class answers web requests"
+@RequestMapping("/api/customers")     // "...for URLs that start with /api/customers"
+public class CustomerController {
+
+    @GetMapping                       // GET  /api/customers      -> run all()
+    public List<Customer> all() { ... }
+
+    @GetMapping("/{id}")              // GET  /api/customers/7    -> run one(7)
+    public ResponseEntity<Customer> one(@PathVariable Long id) { ... }
+
+    @PostMapping                      // POST /api/customers      -> run create()
+    public Customer create(@RequestBody Customer c) { ... }
+}
+```
+
+| Label | Meaning |
+|---|---|
+| `@RequestMapping("/api/customers")` | The shared start of the URL for every method in the class |
+| `@GetMapping`, `@PostMapping` (also `@PutMapping`, `@DeleteMapping`) | Which HTTP verb triggers the method. A path inside the brackets is added to the class path |
+| `{id}` plus `@PathVariable` | Take that piece of the URL and pass it in as the parameter |
+| `@RequestBody` | Read the JSON the browser sent and turn it into a `Customer` object |
+
+At startup Spring scans for these labels and builds a **routing table**. When a request arrives, it looks the request up in the table, converts the URL piece or JSON into the method's parameters, calls the method, and turns the return value into JSON (and the status code):
+
+| Verb | URL | Method to call |
+|---|---|---|
+| GET | `/api/customers` | `all()` |
+| GET | `/api/customers/{id}` | `one(id)` |
+| POST | `/api/customers` | `create(body)` |
+
+Nothing in your code calls `all()` or `create()` directly. The framework does, after matching the request.
+
+**The same thing with no annotations.** Without them you write the routing table yourself as `if` statements. That is what `mock-api.mjs` (lesson 03) does:
+
+```js
+if (req.method === 'GET' && url.pathname === '/api/customers') ...
+if (req.method === 'GET' && one) ...          // a regex for /api/customers/{id}
+if (req.method === 'POST' && url.pathname === '/api/customers') ...
+```
+
+The annotations are that same code written as labels. The framework builds the `if` chain, parses the JSON and sets the status codes.
+
+**The same controller in Visual Basic (ASP.NET).** .NET calls these labels **attributes**, and VB writes them in angle brackets:
+
+```vb
+<ApiController>
+<Route("api/customers")>
+Public Class CustomersController
+    Inherits ControllerBase
+
+    Private ReadOnly _repo As ICustomerRepository
+
+    ' The framework passes the repository in, as Spring does
+    Public Sub New(repo As ICustomerRepository)
+        _repo = repo
+    End Sub
+
+    <HttpGet>
+    Public Function All() As List(Of Customer)
+        Return _repo.FindAll()
+    End Function
+
+    <HttpGet("{id:long}")>
+    Public Function One(id As Long) As ActionResult(Of Customer)
+        Dim c = _repo.FindById(id)
+        If c Is Nothing Then Return NotFound()      ' the 404
+        Return c
+    End Function
+
+    <HttpPost>
+    Public Function Create(<FromBody> c As Customer) As Customer
+        Return _repo.Save(c)
+    End Function
+End Class
+```
+
+| Spring (Java) | ASP.NET (VB) |
+|---|---|
+| `@RestController` | `<ApiController>` plus `Inherits ControllerBase` |
+| `@RequestMapping("/api/customers")` | `<Route("api/customers")>` |
+| `@GetMapping` / `@PostMapping` | `<HttpGet>` / `<HttpPost>` |
+| `@PathVariable Long id` | the parameter name matches the `{id}` in the route |
+| `@RequestBody` | `<FromBody>` |
+| `ResponseEntity.notFound()` | `NotFound()` |
+| `@ExceptionHandler` (a 409, exercise 6) | an exception filter or middleware |
+
+Caveat: as far as I know, Microsoft ships no VB templates for modern ASP.NET Core, so nearly every example online is C#. The attributes work from VB, and the older ASP.NET Web API on .NET Framework has full VB support (using `<RoutePrefix>` and `<HttpGet>`). The C# version is nearly line for line the same.
+
 ## 3. `web/src/main.jsx` and `index.html`
 
 `index.html` contains `<div id="root">` and one script tag pointing at `/src/main.jsx`. `main.jsx` mounts `<App />` into that div. That's the entire bootstrap. Everything else is React.
@@ -251,12 +344,14 @@ These aren't criticisms of the lab; they're exactly the kind of improvements tha
 1. Trace what happens, file by file, when a user adds a customer.
 2. Why does the React code use `/api/customers` while the API listens on port 8080?
 3. What would you change on the backend so the UI could show "That email is already registered"?
+4. What does `@GetMapping("/{id}")` on a method inside a `@RequestMapping("/api/customers")` class mean, and what does `@PathVariable` do?
 
 <details><summary>Answers</summary>
 
 1. See §5. `App.jsx` → `nginx.conf` → `CustomerController.create` → Postgres + Kafka → `AuditListener` → back to `App.jsx`'s `load()`.
 2. nginx (in production) or Vite's proxy (in dev) forwards `/api` to the API, so the browser only ever talks to one origin.
 3. Catch the unique-constraint violation in the controller (or a `@ControllerAdvice`) and return **409 Conflict** with a message; then have the frontend read the status and message.
+4. The method answers `GET /api/customers/{id}`; the class path and the method path are joined. `@PathVariable` passes the `{id}` part of the URL into the method parameter.
 </details>
 
 Next: [05 · Exercises](05-exercises.md)
