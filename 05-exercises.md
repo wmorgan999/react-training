@@ -87,6 +87,26 @@ Build a small MCP server so an AI app can work with your customer data.
 
 *What you practice:* tool design, writing descriptions for a model, safe write tools, and seeing the host/harness decide when to call a tool.
 
+## Part E: TypeScript (lesson 07)
+
+### 12 ★★ Convert the app to TypeScript
+Work in your own copy of `training-react-myapp` on a branch, starting from the plain JavaScript version (the finished exercise 6 code).
+
+1. `npm install -D typescript`, add `tsconfig.json` (lesson 07 §3) and the `typecheck` script. Run `npm run typecheck` and confirm it passes with nothing to check yet.
+2. Create `src/types.ts` with `Customer` and `CustomerInput`, mirroring the Java entity (`createdAt` is `string | null`).
+3. Rename and type the files **one at a time**, running `npm run typecheck` after each: `api/customers`, then the hooks, then `CustomerForm`, `CustomerTable`, the pages, `main`, and last the tests. Update `index.html` for `main.tsx`.
+4. Model the detail page's state as a **discriminated union** (lesson 07 §4) and fix the page so `state.customer` is only used when `status === 'ready'`.
+5. Break it on purpose: misspell a field, omit a required prop, pass the wrong type. Read each error message and fix it.
+
+*Self-check:* `npm run typecheck`, `npm test` and `npm run build` all pass, and you can explain why `npm test` can pass while `typecheck` fails.
+
+*Stretch goals:*
+- Add `springdoc-openapi-starter-webmvc-ui` to the Java API, open its `/v3/api-docs`, and generate the `Customer` type with `openapi-typescript` instead of writing it by hand. Compare it with yours.
+- Add a `zod` schema for `Customer`, validate the response in `listCustomers()`, and see what happens when the API sends a bad shape.
+- Turn on `noUncheckedIndexedAccess` in `tsconfig.json` and fix what it flags.
+
+*What you practice:* mapping server entities to client types, typing props and state, narrowing, and treating the type checker as part of the build.
+
 ## Self-assessment checklist
 
 - [ ] I can explain state vs props and why state is never mutated directly.
@@ -97,3 +117,5 @@ Build a small MCP server so an AI app can work with your customer data.
 - [ ] I can say, in my own words, when I'd choose React and when Angular.
 - [ ] I can explain what a harness does that the model can't, and draw its loop.
 - [ ] I can say when I'd use an MCP server versus a plain function tool, and name three design rules for good tools.
+- [ ] I can map a JPA entity to a TypeScript type, and explain why `response.json()` is not type-safe at runtime.
+- [ ] I can type component props and `useState`, and use a discriminated union to model loading / ready / error.
